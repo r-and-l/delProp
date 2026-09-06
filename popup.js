@@ -21,6 +21,14 @@ function parseTimeToMinutes(timeStr) {
 	return parts[0] * 60 + parts[1];
 }
 
+function minutesToTimeStr(totalMin) {
+	if (totalMin === null || totalMin === undefined || isNaN(totalMin)) return '';
+	const clamped = Math.min(Math.max(totalMin, 0), 23 * 60 + 59);
+	const h = Math.floor(clamped / 60);
+	const m = clamped % 60;
+	return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 function formatMinutes(totalMin) {
 	if (totalMin === null || totalMin === undefined || isNaN(totalMin)) return '0ч 0м';
 	const isNeg = totalMin < 0;
@@ -471,6 +479,27 @@ if (clearTreeCacheBtn) {
 const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 const dayNames = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
+// Current entry being edited (null = add mode). { key, list, manual }
+let compEditingState = null;
+
+function startEditingEntry(entry) {
+	compEditingState = { key: entry.key, list: entry.list, manual: !!entry.manual };
+
+	const manualForm = document.getElementById('manual-add-form');
+	const manualDate = document.getElementById('manual-date');
+	const manualFrom = document.getElementById('manual-time-from');
+	const manualTo = document.getElementById('manual-time-to');
+	const manualMoney = document.getElementById('manual-is-money');
+
+	manualForm.style.display = 'block';
+	manualDate.value = entry.key;
+	const slots = entry.slots || [];
+	manualFrom.value = minutesToTimeStr(slots.length ? slots[0] : null);
+	manualTo.value = minutesToTimeStr(slots.length ? slots[slots.length - 1] + 1 : null);
+	manualMoney.checked = entry.list === 'money';
+	manualDate.focus();
+}
+
 function renderCompTime() {
 	chrome.storage.local.get(['overtimeDays', 'paidOvertimeDays', 'carryOverMinutes', 'compGoalHours'], (data) => {
 		const overtimeDays = data.overtimeDays || {};
@@ -575,9 +604,9 @@ function renderCompTime() {
 					tr.style.background = 'rgba(245, 158, 11, 0.06)';
 					tr.title = 'Переработка за деньги';
 				}
-				if (entry.manual) {
+				if (entry.manual || entry.edited) {
 					tr.style.borderLeft = '3px solid #f59e0b';
-					if (!tr.title) tr.title = 'Ручная запись';
+					tr.title = entry.edited ? 'Изменено вручную' : 'Ручная запись';
 				}
 
 				// Date column
@@ -593,10 +622,10 @@ function renderCompTime() {
 				timeTd.textContent = formatMinutes(dayData.minutes || 0);
 				timeTd.style.fontWeight = '600';
 				timeTd.style.color = entry.list === 'money' ? '#f59e0b' : 'var(--accent)';
-				if (entry.manual) {
+				if (entry.manual || entry.edited) {
 					const icon = document.createElement('span');
 					icon.style.marginLeft = '4px';
-					icon.title = 'Ручная запись';
+					icon.title = entry.edited ? 'Изменено вручную' : 'Ручная запись';
 					icon.textContent = '✏️';
 					timeTd.appendChild(icon);
 				}
@@ -609,10 +638,20 @@ function renderCompTime() {
 					timeTd.appendChild(badge);
 				}
 
-				// Actions column (move + delete)
+				// Actions column (edit + move + delete)
 				const actionTd = document.createElement('td');
 				actionTd.style.textAlign = 'center';
 				actionTd.style.whiteSpace = 'nowrap';
+
+				// Edit button (available for ALL entries)
+				const editBtn = document.createElement('button');
+				editBtn.type = 'button';
+				editBtn.className = 'comp-btn-delete';
+				editBtn.style.marginRight = '4px';
+				editBtn.innerHTML = '📝';
+				editBtn.title = 'Изменить время этой записи';
+				editBtn.addEventListener('click', () => startEditingEntry(entry));
+				actionTd.appendChild(editBtn);
 
 				// Move button (comp <-> money)
 				const moveBtn = document.createElement('button');
@@ -633,10 +672,10 @@ function renderCompTime() {
 
 					if (entry.list === 'comp') {
 						delete overtimeDays[entry.key];
-						paidOvertimeDays[entry.key] = { minutes: dayData.minutes, slots: dayData.slots, manual: dayData.manual };
+						paidOvertimeDays[entry.key] = { ...dayData };
 					} else {
 						delete paidOvertimeDays[entry.key];
-						overtimeDays[entry.key] = { minutes: dayData.minutes, slots: dayData.slots, manual: dayData.manual };
+						overtimeDays[entry.key] = { ...dayData };
 					}
 					chrome.storage.local.set({ overtimeDays, paidOvertimeDays }, renderCompTime);
 				});
@@ -727,7 +766,7 @@ function renderCompTime() {
 			filterDropdown.dataset.listenerAdded = 'true';
 		}
 
-		// Wire up manual add form (once)
+		// Wire up manual add/edit form (once)
 		if (!document.getElementById('addManualBtn').dataset.wired) {
 			document.getElementById('addManualBtn').dataset.wired = 'true';
 			const addManualBtn = document.getElementById('addManualBtn');
@@ -744,6 +783,7 @@ function renderCompTime() {
 
 			addManualBtn.addEventListener('click', () => {
 				manualForm.style.display = manualForm.style.display === 'none' ? 'block' : 'none';
+				compEditingState = null;
 				if (manualForm.style.display === 'block') {
 					manualDate.focus();
 				}
@@ -751,6 +791,7 @@ function renderCompTime() {
 
 			manualCancelBtn.addEventListener('click', () => {
 				manualForm.style.display = 'none';
+				compEditingState = null;
 			});
 
 			manualSaveBtn.addEventListener('click', () => {
@@ -758,6 +799,8 @@ function renderCompTime() {
 				const fromMin = parseTimeToMinutes(manualFrom.value);
 				const toMin = parseTimeToMinutes(manualTo.value);
 				const isMoney = manualMoney.checked;
+				const editing = compEditingState;
+				compEditingState = null;
 
 				if (!dateStr || fromMin === null || toMin === null || toMin <= fromMin) {
 					alert('Проверьте дату и время: конец должен быть позже начала.');
@@ -766,18 +809,35 @@ function renderCompTime() {
 
 				const minutes = toMin - fromMin;
 				const slots = Array.from({ length: minutes }, (_, i) => fromMin + i);
-				const entry = { minutes, slots, manual: true };
 
-				if (isMoney) {
-					paidOvertimeDays[dateStr] = entry;
-				} else {
-					overtimeDays[dateStr] = entry;
-				}
+				// Read fresh data so repeated edits don't work with stale copies
+				chrome.storage.local.get(['overtimeDays', 'paidOvertimeDays'], (fresh) => {
+					const overtimeDays = fresh.overtimeDays || {};
+					const paidOvertimeDays = fresh.paidOvertimeDays || {};
 
-				chrome.storage.local.set({ overtimeDays, paidOvertimeDays }, () => {
-					manualForm.style.display = 'none';
-					manualMoney.checked = false;
-					renderCompTime();
+					const entry = { minutes, slots, manual: true };
+					if (editing) {
+						// Edited entry keeps its origin but is protected from auto-import overwrite
+						entry.manual = editing.manual;
+						entry.edited = true;
+						if (editing.list === 'comp') {
+							delete overtimeDays[editing.key];
+						} else {
+							delete paidOvertimeDays[editing.key];
+						}
+					}
+
+					if (isMoney) {
+						paidOvertimeDays[dateStr] = entry;
+					} else {
+						overtimeDays[dateStr] = entry;
+					}
+
+					chrome.storage.local.set({ overtimeDays, paidOvertimeDays }, () => {
+						manualForm.style.display = 'none';
+						manualMoney.checked = false;
+						renderCompTime();
+					});
 				});
 			});
 		}

@@ -201,13 +201,32 @@ window.delProp.openModal = function(src) {
 
 	div.classList.add('blured_background');
 	div.id = 'modal';
-	
+
 	img.classList.add('zoomables');
 	img.id = 'zoomMe';
 	img.src = src;
-	
+
 	div.appendChild(img);
 	document.body.appendChild(div);
+
+	// Fit the image into 80% of the screen: stretch small images up, shrink large ones down.
+	// Implemented via CSS width/height so pan & zoom (transform matrix) keep working on top.
+	const fitImageToScreen = () => {
+		const nw = img.naturalWidth, nh = img.naturalHeight;
+		if (!nw || !nh) return;
+		const maxW = window.innerWidth * 0.8;
+		const maxH = window.innerHeight * 0.8;
+		const scale = Math.min(maxW / nw, maxH / nh);
+		if (scale > 0 && Math.abs(scale - 1) > 0.001) {
+			img.style.width = `${Math.round(nw * scale)}px`;
+			img.style.height = `${Math.round(nh * scale)}px`;
+		}
+	};
+	if (img.complete && img.naturalWidth) {
+		fitImageToScreen();
+	} else {
+		img.addEventListener('load', fitImageToScreen);
+	}
 
 	document.addEventListener('mousemove', handleMouseEvent, { passive: false });
 	document.addEventListener('mousedown', handleMouseEvent, { passive: false });

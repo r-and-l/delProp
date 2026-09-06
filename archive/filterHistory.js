@@ -104,15 +104,6 @@
 					const entry = history[history.length - 1 - historyIndex];
 					searchInput.value = getQuery(entry);
 					searchInput.dispatchEvent(new Event('input'));
-
-					// If entry was saved in a different tab, switch to that tab
-					const savedTab = getTab(entry);
-					const currentTab = getActiveTabName();
-					if (savedTab && currentTab && savedTab !== currentTab) {
-						findTabIdByName(savedTab, (tabId) => {
-							if (tabId) switchToTab(tabId);
-						});
-					}
 				}
 			} else if (e.key === 'ArrowDown') {
 				e.preventDefault();
@@ -124,15 +115,6 @@
 					const entry = history[history.length - 1 - historyIndex];
 					searchInput.value = getQuery(entry);
 					searchInput.dispatchEvent(new Event('input'));
-
-					// Tab switch for downwards navigation too
-					const savedTab = getTab(entry);
-					const currentTab = getActiveTabName();
-					if (savedTab && currentTab && savedTab !== currentTab) {
-						findTabIdByName(savedTab, (tabId) => {
-							if (tabId) switchToTab(tabId);
-						});
-					}
 				} else if (historyIndex === 0) {
 					historyIndex = -1;
 					if (typeof window.suppressAutocomplete === 'function') {

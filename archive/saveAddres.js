@@ -168,12 +168,16 @@ document.addEventListener("delPropResponse", (e) => {
 });
 
 // Inject patch.js to page context to call native archive functions and retrieve doc details
-const patchScript = document.createElement('script');
-patchScript.src = chrome.runtime.getURL('archive/patch.js');
-patchScript.onload = function () {
-	this.remove();
-};
-(document.head || document.documentElement).appendChild(patchScript);
+// (guarded: projectFilter.js may have already injected it — double wrapping of XHR must be avoided)
+if (!document.documentElement.dataset.delpropPatchInjected) {
+	document.documentElement.dataset.delpropPatchInjected = 'true';
+	const patchScript = document.createElement('script');
+	patchScript.src = chrome.runtime.getURL('archive/patch.js');
+	patchScript.onload = function () {
+		this.remove();
+	};
+	(document.head || document.documentElement).appendChild(patchScript);
+}
 
 // Key listener for shortcuts
 document.addEventListener('keydown', (e) => {

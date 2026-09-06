@@ -251,7 +251,14 @@
 				}
 
 				if (overtimeMin > 0) {
-					if (!overtimeDays[storageKey] || overtimeDays[storageKey].minutes !== overtimeMin) {
+					// Never overwrite an entry the user has edited manually
+					if (!overtimeDays[storageKey]) {
+						overtimeDays[storageKey] = {
+							minutes: overtimeMin,
+							slots: Array.from({ length: overtimeMin }, (_, i) => targetEndMin + i)
+						};
+						changed = true;
+					} else if (!overtimeDays[storageKey].edited && overtimeDays[storageKey].minutes !== overtimeMin) {
 						overtimeDays[storageKey] = {
 							minutes: overtimeMin,
 							slots: Array.from({ length: overtimeMin }, (_, i) => targetEndMin + i)
@@ -259,7 +266,7 @@
 						changed = true;
 					}
 				} else {
-					if (overtimeDays[storageKey]) {
+					if (overtimeDays[storageKey] && !overtimeDays[storageKey].edited) {
 						delete overtimeDays[storageKey];
 						changed = true;
 					}

@@ -31,23 +31,33 @@
 			const cacheKey = this._delpropCacheKey;
 			const nodeId = this._delpropNodeId;
 			const url = this._delpropUrl;
-			const cachedData = localStorage.getItem(cacheKey);
 
-			if (cachedData) {
-				try {
+			// The whole cache path is wrapped: if anything goes wrong (blocked or
+			// quota'd localStorage, broken cache entry, property redefinition
+			// failure), we MUST fall back to the real network request instead of
+			// blocking archive loading entirely.
+			try {
+				const cachedData = localStorage.getItem(cacheKey);
+
+				if (cachedData) {
 					const parsed = JSON.parse(cachedData);
 					const TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 					if (Date.now() - parsed.timestamp < TTL) {
-						Object.defineProperties(this, {
+						const parsedDoc = new DOMParser().parseFromString(parsed.data, 'text/xml');
+						const props = {
 							responseText: { value: parsed.data, writable: true },
-							responseXML: { 
-								value: new DOMParser().parseFromString(parsed.data, 'text/xml'), 
-								writable: true 
-							},
+							responseXML: { value: parsedDoc, writable: true },
 							status: { value: 200, writable: true },
 							statusText: { value: 'OK', writable: true },
 							readyState: { value: 4, writable: true }
-						});
+						};
+						// Mirror the response property the way the page expects it
+						if (this.responseType === '' || this.responseType === 'text') {
+							props.response = { value: parsed.data, writable: true };
+						} else if (this.responseType === 'document') {
+							props.response = { value: parsedDoc, writable: true };
+						}
+						Object.defineProperties(this, props);
 
 						setTimeout(() => {
 							if (typeof this.onreadystatechange === 'function') {
@@ -63,21 +73,22 @@
 						}, 100);
 						return;
 					}
-				} catch (e) {
-					console.error("delProp: error reading tree cache:", e);
 				}
+			} catch (e) {
+				console.error("delProp: tree cache unavailable, falling back to network:", e);
+				// Fall through to the real request below — never block the archive.
 			}
 
 			this.addEventListener('load', () => {
-				if (this.status === 200 && this.responseText) {
-					try {
+				try {
+					if (this.status === 200 && this.responseType === '' && this.responseText) {
 						localStorage.setItem(cacheKey, JSON.stringify({
 							timestamp: Date.now(),
 							data: this.responseText
 						}));
-					} catch (e) {
-						console.error("delProp: error caching tree data:", e);
 					}
+				} catch (e) {
+					console.error("delProp: error caching tree data:", e);
 				}
 			});
 		}
